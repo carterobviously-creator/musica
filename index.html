@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Music Creator</title>
+<style>
+    body {
+        margin: 0;
+        background: #0a0a0f;
+        font-family: Arial, sans-serif;
+        overflow: hidden;
+        color: white;
+    }
+
+    #dust {
+        position: fixed;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 0;
+    }
+
+    .center-box {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        z-index: 10;
+        width: 500px;
+    }
+
+    input {
+        width: 100%;
+        padding: 15px;
+        border-radius: 10px;
+        border: none;
+        font-size: 18px;
+        margin-bottom: 20px;
+    }
+
+    button {
+        width: 100%;
+        padding: 15px;
+        border-radius: 10px;
+        border: none;
+        background: #6a00ff;
+        color: white;
+        font-size: 20px;
+        cursor: pointer;
+    }
+
+    #logo {
+        margin-top: 30px;
+        width: 256px;
+        height: 256px;
+        border-radius: 20px;
+        background: #111;
+        display: inline-block;
+    }
+
+    #audio {
+        margin-top: 20px;
+        width: 100%;
+    }
+</style>
+</head>
+
+<body>
+
+<canvas id="dust"></canvas>
+
+<div class="center-box">
+    <h1>Music Creator</h1>
+    <input id="prompt" placeholder="Describe your track...">
+    <button onclick="create()">Create</button>
+
+    <div id="logo"></div>
+    <audio id="audio" controls></audio>
+</div>
+
+<script>
+// MAGIC DUST BACKGROUND
+const canvas = document.getElementById("dust");
+const ctx = canvas.getContext("2d");
+canvas.width = innerWidth;
+canvas.height = innerHeight;
+
+let particles = [];
+for (let i = 0; i < 200; i++) {
+    particles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        s: Math.random() * 2,
+        v: Math.random() * 0.5 + 0.2
+    });
+}
+
+function animateDust() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    particles.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.s, 0, Math.PI * 2);
+        ctx.fill();
+        p.y += p.v;
+        if (p.y > canvas.height) p.y = 0;
+    });
+    requestAnimationFrame(animateDust);
+}
+animateDust();
+
+// LOAD LK FILES
+let modelLK = null;
+let musicLK = null;
+
+async function loadLK() {
+    modelLK = await fetch("model.lk").then(r => r.json());
+    musicLK = await fetch("musica-small.lk").then(r => r.json());
+}
+loadLK();
+
+// CREATE BUTTON
+async function create() {
+    const prompt = document.getElementById("prompt").value;
+
+    generateLogo(prompt);
+    generateMusic(prompt);
+}
+
+// SIMPLE LOGO GENERATOR
+function generateLogo(prompt) {
+    const box = document.getElementById("logo");
+    const w = modelLK.weights;
+
+    const r = Math.floor(w[0] * 255);
+    const g = Math.floor(w[1] * 255);
+    const b = Math.floor(w[2] * 255);
+
+    box.style.background = `rgb(${r},${g},${b})`;
+}
+
+// MUSIC GENERATOR
+function sampleNext(probs) {
+    const r = Math.random();
+    let acc = 0;
+    for (let i = 0; i < probs.length; i++) {
+        acc += probs[i];
+        if (r <= acc) return i;
+    }
+    return probs.length - 1;
+}
+
+async function generateMusic(prompt) {
+    const transitions = musicLK.transitions;
+    const tempo = musicLK.config.tempo;
+    const length = 32;
+
+    let current = 0;
+    const notes = [current];
+
+    for (let i = 0; i < length - 1; i++) {
+        current = sampleNext(transitions[current]);
+        notes.push(current);
+    }
+
+    playNotes(notes, tempo);
+}
+
+async function playNotes(notes, tempo) {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const secondsPerBeat = 60 / tempo;
+    const now = ctx.currentTime;
+
+    notes.forEach((note, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        const freq = 220 * Math.pow(2, note / 12);
+        osc.frequency.value = freq;
+
+        gain.gain.setValueAtTime(0.2, now + idx * secondsPerBeat);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + (idx + 0.9) * secondsPerBeat);
+
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now + idx * secondsPerBeat);
+        osc.stop(now + (idx + 1) * secondsPerBeat);
+    });
+}
+</script>
+
+</body>
+</html>
