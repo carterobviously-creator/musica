@@ -127,10 +127,10 @@ async function create() {
     generateMusic(prompt);
 }
 
-// SIMPLE LOGO GENERATOR
+// LOGO GENERATOR
 function generateLogo(prompt) {
     const box = document.getElementById("logo");
-    const w = modelLK.weights;
+    const w = modelLK.colorWeights;
 
     const r = Math.floor(w[0] * 255);
     const g = Math.floor(w[1] * 255);
@@ -139,52 +139,53 @@ function generateLogo(prompt) {
     box.style.background = `rgb(${r},${g},${b})`;
 }
 
-// MUSIC GENERATOR
-function sampleNext(probs) {
-    const r = Math.random();
-    let acc = 0;
-    for (let i = 0; i < probs.length; i++) {
-        acc += probs[i];
-        if (r <= acc) return i;
+// REAL AI MUSIC GENERATOR
+function tanh(x) {
+    return Math.tanh(x);
+}
+
+function dense(input, layer) {
+    let sum = layer.b[0];
+    for (let i = 0; i < input.length; i++) {
+        sum += input[i] * layer.w[i];
     }
-    return probs.length - 1;
+    return tanh(sum);
 }
 
 async function generateMusic(prompt) {
-    const transitions = musicLK.transitions;
-    const tempo = musicLK.config.tempo;
-    const length = 32;
+    const latentSize = musicLK.latentSize;
+    const layers = musicLK.layers;
+    const sampleRate = musicLK.sampleRate;
+    const duration = musicLK.duration;
 
-    let current = 0;
-    const notes = [current];
-
-    for (let i = 0; i < length - 1; i++) {
-        current = sampleNext(transitions[current]);
-        notes.push(current);
+    // RANDOM LATENT VECTOR = DIFFERENT SONG EVERY TIME
+    let latent = [];
+    for (let i = 0; i < latentSize; i++) {
+        latent.push(Math.random() * 2 - 1);
     }
 
-    playNotes(notes, tempo);
-}
-
-async function playNotes(notes, tempo) {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const secondsPerBeat = 60 / tempo;
-    const now = ctx.currentTime;
-
-    notes.forEach((note, idx) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-
-        const freq = 220 * Math.pow(2, note / 12);
-        osc.frequency.value = freq;
-
-        gain.gain.setValueAtTime(0.2, now + idx * secondsPerBeat);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + (idx + 0.9) * secondsPerBeat);
-
-        osc.connect(gain).connect(ctx.destination);
-        osc.start(now + idx * secondsPerBeat);
-        osc.stop(now + (idx + 1) * secondsPerBeat);
+    // RUN THROUGH NETWORK
+    let value = latent;
+    layers.forEach(layer => {
+        value = [dense(value, layer)];
     });
+
+    // TURN INTO AUDIO
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const length = sampleRate * duration;
+    const buffer = ctx.createBuffer(1, length, sampleRate);
+    const data = buffer.getChannelData(0);
+
+    for (let i = 0; i < length; i++) {
+        data[i] = Math.sin(i * value[0] * 20);
+    }
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start();
+
+    document.getElementById("audio").src = "";
 }
 </script>
 
